@@ -1,0 +1,6 @@
+# portfolio repo — no source code, just case study
+*.env
+*.db
+__pycache__/
+node_modules/
+.DS_Store

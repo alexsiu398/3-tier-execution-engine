@@ -76,7 +76,7 @@ Users can choose their trade-off via the settings UI:
 ![Settings panel showing Option A, B and Option C (Maximum Reliability) selected](3-tier-setting.png)
 
 ### Demo Video
-<video src="demo.webm" controls width="100%"></video>
+![Demo video](demo.webm)
 
 ---
 

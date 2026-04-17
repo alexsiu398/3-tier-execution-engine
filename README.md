@@ -67,6 +67,19 @@ Users can choose their trade-off via the settings UI:
 
 ---
 
+## Screenshots & Demo
+
+### Execution Detail — 12/12 Steps Passed
+![Execution #731 showing 12 of 12 steps completed via Tier 1 and Tier 2](execution_history.png)
+
+### Settings UI — Fallback Strategy Picker
+![Settings panel showing Option A, B and Option C (Maximum Reliability) selected](3-tier-setting.png)
+
+### Demo Video
+<video src="demo.webm" controls width="100%"></video>
+
+---
+
 ## Architecture & Tech Stack
 
 **Backend** — Python / FastAPI  

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { TestStep, StepAction } from '../types'
 
 const ACTIONS: StepAction[] = ['navigate', 'click', 'fill', 'press', 'assert_text', 'assert_url']
@@ -40,6 +41,17 @@ interface StepEditorProps {
 }
 
 export function StepEditor({ steps, onChange }: StepEditorProps) {
+  // Local text state so the textarea is never reset mid-edit.
+  // Spaces, newlines, and partial words all stay intact while typing.
+  // The parent receives parsed steps via onChange, but doesn't drive the textarea value.
+  const [text, setText] = useState(() => stepsToText(steps))
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newText = e.target.value
+    setText(newText)
+    onChange(textToSteps(newText))
+  }
+
   return (
     <div className="step-editor">
       <label htmlFor="steps-text">
@@ -47,8 +59,8 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
         <textarea
           id="steps-text"
           className="step-editor__textarea"
-          value={stepsToText(steps)}
-          onChange={(e) => onChange(textToSteps(e.target.value))}
+          value={text}
+          onChange={handleChange}
           placeholder={`navigate https://example.com\nclick Login button\nfill Username with admin@test.com`}
           rows={8}
         />

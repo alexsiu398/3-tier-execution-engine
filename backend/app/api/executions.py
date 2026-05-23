@@ -111,7 +111,8 @@ async def _run_execution_bg(
         await db.commit()
 
         svc = ThreeTierService(db, timeout_seconds=timeout_seconds)
-        steps = [Step(**s) for s in steps_data]
+        _STEP_FIELDS = {"action", "instruction", "selector", "value"}
+        steps = [Step(**{k: v for k, v in s.items() if k in _STEP_FIELDS}) for s in steps_data]
 
         try:
             async with async_playwright() as pw:

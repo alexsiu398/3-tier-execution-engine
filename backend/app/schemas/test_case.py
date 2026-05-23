@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 VALID_ACTIONS = Literal["navigate", "click", "fill", "press", "assert_text", "assert_url"]
 
@@ -9,7 +9,9 @@ class TestStepSchema(BaseModel):
     action: VALID_ACTIONS
     instruction: str
     selector: Optional[str] = None
-    xpath: Optional[str] = None  # client-friendly alias; merged into selector below
+    # xpath is accepted as a client-friendly alias for selector but is never
+    # stored or returned — Field(exclude=True) keeps it out of model_dump().
+    xpath: Optional[str] = Field(default=None, exclude=True)
     value: Optional[str] = None
 
     @model_validator(mode="after")

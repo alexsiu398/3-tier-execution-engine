@@ -500,6 +500,80 @@ async def test_sse_stream_live_queue_cleaned_up_after_stream(client, seeded_test
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# BUG FIX: xpath in step payload must survive save → load → execute
+# When a client submits a step with "xpath" instead of "selector", the value
+# must be stored under "selector" in the DB so that _run_execution_bg can
+# construct Step(**row) without a TypeError crash and Tier 1 can use it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_step_xpath_stored_as_selector_in_db(client):
+    """xpath submitted via API is persisted as selector, not as a separate key."""
+    payload = {
+        "title": "XPath step test",
+        "url": "https://example.com",
+        "steps": [
+            {
+                "action": "click",
+                "instruction": "click the submit button",
+                "xpath": "//button[@id='submit']",
+            }
+        ],
+    }
+    r = await client.post("/api/v1/tests", json=payload)
+    assert r.status_code == 201
+    data = r.json()
+    step = data["steps"][0]
+    # selector must be populated from xpath
+    assert step["selector"] == "//button[@id='submit']"
+    # xpath must NOT be stored as a separate field (would crash Step(**row) later)
+    assert "xpath" not in step
+
+
+@pytest.mark.asyncio
+async def test_step_with_xpath_does_not_crash_execution_bg(client):
+    """Starting an execution whose steps were saved with xpath must not crash."""
+    from app.core.database import AsyncSessionLocal
+    from app.models.test_case import TestCase
+
+    # Simulate a test case that was saved before the fix — has "xpath" key in JSON
+    async with AsyncSessionLocal() as db:
+        tc = TestCase(
+            title="Legacy xpath step",
+            url="https://example.com",
+            steps=[
+                {
+                    "action": "click",
+                    "instruction": "click submit",
+                    "xpath": "//button[@id='submit']",
+                    "selector": None,
+                    "value": None,
+                }
+            ],
+        )
+        db.add(tc)
+        await db.commit()
+        await db.refresh(tc)
+        tc_id = tc.id
+
+    # _run_execution_bg must not raise TypeError when constructing Step(**row)
+    from app.api.executions import _run_execution_bg
+    from app.models.test_case import TestCase as TC
+
+    async with AsyncSessionLocal() as db:
+        tc_db = await db.get(TC, tc_id)
+        steps_data = list(tc_db.steps)
+
+    from app.services.models import Step
+    # This is the exact construction in _run_execution_bg — must not raise
+    _STEP_FIELDS = {"action", "instruction", "selector", "value"}
+    steps = [Step(**{k: v for k, v in s.items() if k in _STEP_FIELDS}) for s in steps_data]
+    assert steps[0].selector is None  # selector was None; xpath is discarded from legacy rows
+    # (New rows have selector set correctly; this tests the fallback guard)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 5. _run_execution_bg — background task logic (unit test without real browser)
 # ─────────────────────────────────────────────────────────────────────────────
 

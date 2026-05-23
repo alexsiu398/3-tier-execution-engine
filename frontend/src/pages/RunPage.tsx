@@ -122,6 +122,9 @@ export function RunPage() {
         </div>
 
         <div className="run-progress">
+          {steps.length === 0 && !done && (
+            <p className="run-progress-empty">Select a test and press Run to start.</p>
+          )}
           {steps.length > 0 && (
             <ExecutionProgress
               steps={steps}

@@ -76,7 +76,7 @@ export function TestsPage() {
         {tests.map((tc) => (
           <div key={tc.id} className="test-card">
             <div className="test-card__header">
-              <strong>{tc.title}</strong>
+              <h3>{tc.title}</h3>
               <span className="test-card__url">{tc.url}</span>
             </div>
             <p className="test-card__steps">{tc.steps.length} step{tc.steps.length !== 1 ? 's' : ''}</p>

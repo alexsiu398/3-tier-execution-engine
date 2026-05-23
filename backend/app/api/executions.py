@@ -115,7 +115,7 @@ async def _run_execution_bg(
 
         try:
             async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
+                browser = await pw.chromium.launch(headless=False)
                 page = await browser.new_page()
                 try:
                     for idx, step in enumerate(steps):

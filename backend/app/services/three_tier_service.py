@@ -68,7 +68,12 @@ class ThreeTierService:
         result = await self.tier1.execute_step(page, step)
 
         if not result.success:
-            if strategy == "option_a":
+            # If an explicit selector was provided, Tier 1 is the intended executor.
+            # Escalating to AI tiers would silently discard the user-supplied xpath/CSS,
+            # so surface the Tier 1 error directly instead.
+            if step.selector:
+                pass  # fall through to persist + return below
+            elif strategy == "option_a":
                 result = await self.tier2.execute_step(page, step)
             elif strategy == "option_b":
                 result = await self.tier3.execute_step(page, step)

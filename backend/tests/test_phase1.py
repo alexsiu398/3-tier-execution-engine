@@ -176,6 +176,41 @@ def test_execution_settings_schema_defaults():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# BUG FIX: xpath key submitted by client must map to selector field
+# If a user includes {"xpath": "//..."} in a step payload the value must not
+# be silently dropped — it must be available as step.selector so Tier 1 can
+# use it directly without AI involvement.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_test_step_schema_xpath_maps_to_selector():
+    """Submitting xpath= should populate selector so Tier 1 can use it."""
+    from app.schemas.test_case import TestStepSchema
+    s = TestStepSchema(action="click", instruction="click submit", xpath="//button[@id='submit']")
+    assert s.selector == "//button[@id='submit']"
+
+
+def test_test_step_schema_selector_takes_precedence_over_xpath():
+    """When both selector and xpath are provided, selector wins."""
+    from app.schemas.test_case import TestStepSchema
+    s = TestStepSchema(
+        action="click",
+        instruction="click submit",
+        selector="#submit",
+        xpath="//button[@id='submit']",
+    )
+    assert s.selector == "#submit"
+
+
+def test_test_step_schema_xpath_via_dict_parse():
+    """Client JSON payload with xpath key must not be silently dropped."""
+    from app.schemas.test_case import TestStepSchema
+    raw = {"action": "fill", "instruction": "enter email", "xpath": "//input[@name='email']", "value": "a@b.com"}
+    s = TestStepSchema.model_validate(raw)
+    assert s.selector == "//input[@name='email']"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 6. Test-case API endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 

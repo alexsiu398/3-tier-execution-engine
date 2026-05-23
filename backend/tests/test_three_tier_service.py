@@ -27,6 +27,7 @@ os.environ.setdefault("STAGEHAND_MOCK", "true")
 
 @pytest_asyncio.fixture
 async def db_session():
+    import app.models  # ensure all ORM models are registered with Base.metadata before create_all
     from app.core.database import Base
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -42,10 +43,10 @@ async def db_session():
     await engine.dispose()
 
 
-def _tier_result(tier: int, success: bool, duration_ms: float = 10.0, xpath_cached: bool = False):
+def _tier_result(tier: int, success: bool, duration_ms: float = 10.0, xpath_cached: bool = False, error: str | None = None):
     from app.services.models import TierResult
 
-    return TierResult(tier=tier, success=success, duration_ms=duration_ms, xpath_cached=xpath_cached)
+    return TierResult(tier=tier, success=success, duration_ms=duration_ms, xpath_cached=xpath_cached, error=error)
 
 
 def _step(action="click", instruction="click btn", selector="#btn"):
@@ -127,13 +128,14 @@ async def test_tier1_success_no_escalation_option_c(db_session):
 
 @pytest.mark.asyncio
 async def test_option_a_tier1_fail_escalates_to_tier2(db_session):
+    """Steps WITHOUT an explicit selector fall back to Tier 2 on option_a."""
     svc = _make_service(
         db_session,
         tier1_result=_tier_result(1, False),
         tier2_result=_tier_result(2, True),
     )
 
-    result = await svc.execute_step(_make_page(), _step(), "option_a", execution_id=1, step_index=0)
+    result = await svc.execute_step(_make_page(), _step(selector=None), "option_a", execution_id=1, step_index=0)
 
     assert result.tier == 2
     assert result.success is True
@@ -149,7 +151,7 @@ async def test_option_a_tier1_fail_tier2_fail_no_tier3(db_session):
         tier2_result=_tier_result(2, False),
     )
 
-    result = await svc.execute_step(_make_page(), _step(), "option_a", execution_id=1, step_index=0)
+    result = await svc.execute_step(_make_page(), _step(selector=None), "option_a", execution_id=1, step_index=0)
 
     assert result.tier == 2
     assert result.success is False
@@ -163,13 +165,14 @@ async def test_option_a_tier1_fail_tier2_fail_no_tier3(db_session):
 
 @pytest.mark.asyncio
 async def test_option_b_tier1_fail_escalates_to_tier3(db_session):
+    """Steps WITHOUT a selector skip Tier 2 and jump to Tier 3 on option_b."""
     svc = _make_service(
         db_session,
         tier1_result=_tier_result(1, False),
         tier3_result=_tier_result(3, True),
     )
 
-    result = await svc.execute_step(_make_page(), _step(), "option_b", execution_id=1, step_index=0)
+    result = await svc.execute_step(_make_page(), _step(selector=None), "option_b", execution_id=1, step_index=0)
 
     assert result.tier == 3
     assert result.success is True
@@ -184,6 +187,7 @@ async def test_option_b_tier1_fail_escalates_to_tier3(db_session):
 
 @pytest.mark.asyncio
 async def test_option_c_tier1_fail_tier2_fail_escalates_to_tier3(db_session):
+    """Steps WITHOUT a selector cascade Tier1 → Tier2 → Tier3 on option_c."""
     svc = _make_service(
         db_session,
         tier1_result=_tier_result(1, False),
@@ -191,7 +195,7 @@ async def test_option_c_tier1_fail_tier2_fail_escalates_to_tier3(db_session):
         tier3_result=_tier_result(3, True),
     )
 
-    result = await svc.execute_step(_make_page(), _step(), "option_c", execution_id=1, step_index=0)
+    result = await svc.execute_step(_make_page(), _step(selector=None), "option_c", execution_id=1, step_index=0)
 
     assert result.tier == 3
     assert result.success is True
@@ -208,7 +212,7 @@ async def test_option_c_tier1_fail_tier2_success_no_tier3(db_session):
         tier3_result=_tier_result(3, True),
     )
 
-    result = await svc.execute_step(_make_page(), _step(), "option_c", execution_id=1, step_index=0)
+    result = await svc.execute_step(_make_page(), _step(selector=None), "option_c", execution_id=1, step_index=0)
 
     assert result.tier == 2
     assert result.success is True
@@ -283,7 +287,7 @@ async def test_execution_step_persisted_with_correct_instruction(db_session):
     await db_session.commit()
 
     svc = _make_service(db_session, tier1_result=_tier_result(1, False), tier2_result=_tier_result(2, True))
-    step = _step(instruction="navigate to home page")
+    step = _step(instruction="navigate to home page", selector=None)  # no selector → eligible for AI escalation
 
     await svc.execute_step(_make_page(), step, "option_a", execution_id=exe.id, step_index=2)
 
@@ -291,3 +295,78 @@ async def test_execution_step_persisted_with_correct_instruction(db_session):
     row = (await db_session.execute(stmt)).scalar_one()
     assert row.instruction == "navigate to home page"
     assert row.step_index == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUG FIX: explicit selector → no escalation to AI tiers when Tier 1 fails
+# When a step has an explicit selector (xpath/CSS), Tier 1 is the intended
+# executor.  If Tier 1 fails, the failure must be surfaced as-is instead of
+# being silently swallowed by Tier 2/3 (which discard step.selector entirely).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_explicit_selector_no_escalation_option_a(db_session):
+    """Tier1 fails on a step that has an explicit selector → Tier2 is NOT called."""
+    svc = _make_service(
+        db_session,
+        tier1_result=_tier_result(1, False, error="element not found"),
+    )
+    step = _step(selector="//button[@id='submit']")  # explicit xpath
+
+    result = await svc.execute_step(_make_page(), step, "option_a", execution_id=1, step_index=0)
+
+    assert result.tier == 1
+    assert result.success is False
+    svc.tier2.execute_step.assert_not_called()
+    svc.tier3.execute_step.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_explicit_selector_no_escalation_option_b(db_session):
+    """Tier1 fails on explicit-selector step → Tier3 is NOT called with option_b."""
+    svc = _make_service(
+        db_session,
+        tier1_result=_tier_result(1, False, error="timeout"),
+    )
+    step = _step(selector="//form/input[@name='email']")
+
+    result = await svc.execute_step(_make_page(), step, "option_b", execution_id=1, step_index=0)
+
+    assert result.tier == 1
+    assert result.success is False
+    svc.tier3.execute_step.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_explicit_selector_no_escalation_option_c(db_session):
+    """Tier1 fails on explicit-selector step → neither Tier2 nor Tier3 called."""
+    svc = _make_service(
+        db_session,
+        tier1_result=_tier_result(1, False, error="timeout"),
+    )
+    step = _step(selector="#login-btn")
+
+    result = await svc.execute_step(_make_page(), step, "option_c", execution_id=1, step_index=0)
+
+    assert result.tier == 1
+    assert result.success is False
+    svc.tier2.execute_step.assert_not_called()
+    svc.tier3.execute_step.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_no_selector_still_escalates_to_tier2(db_session):
+    """Steps WITHOUT a selector should still fall back to AI tiers as before."""
+    svc = _make_service(
+        db_session,
+        tier1_result=_tier_result(1, False),
+        tier2_result=_tier_result(2, True),
+    )
+    step = _step(selector=None)  # no explicit selector
+
+    result = await svc.execute_step(_make_page(), step, "option_a", execution_id=1, step_index=0)
+
+    assert result.tier == 2
+    assert result.success is True
+    svc.tier2.execute_step.assert_called_once()

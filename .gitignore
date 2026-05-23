@@ -1,6 +1,39 @@
-# portfolio repo — no source code, just case study
-*.env
-*.db
+# ── Environment & secrets ─────────────────────────────────────────────────
+.env
+backend/.env
+
+# ── Python ────────────────────────────────────────────────────────────────
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ── Virtual environments ───────────────────────────────────────────────────
+backend/.venv/
+.venv/
+venv/
+
+# ── Databases ─────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+backend/engine.db
+
+# ── Test & coverage ────────────────────────────────────────────────────────
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+
+# ── Node / frontend ────────────────────────────────────────────────────────
 node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/coverage/
+
+# ── OS ─────────────────────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db

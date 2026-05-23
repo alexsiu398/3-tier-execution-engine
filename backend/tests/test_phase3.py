@@ -568,9 +568,14 @@ async def test_step_with_xpath_does_not_crash_execution_bg(client):
     from app.services.models import Step
     # This is the exact construction in _run_execution_bg — must not raise
     _STEP_FIELDS = {"action", "instruction", "selector", "value"}
-    steps = [Step(**{k: v for k, v in s.items() if k in _STEP_FIELDS}) for s in steps_data]
-    assert steps[0].selector is None  # selector was None; xpath is discarded from legacy rows
-    # (New rows have selector set correctly; this tests the fallback guard)
+    steps = []
+    for s in steps_data:
+        filtered = {k: v for k, v in s.items() if k in _STEP_FIELDS}
+        if not filtered.get("selector") and s.get("xpath"):
+            filtered["selector"] = s["xpath"]
+        steps.append(Step(**filtered))
+    # Legacy record had selector=None but xpath set — selector must be populated
+    assert steps[0].selector == "//button[@id='submit']"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

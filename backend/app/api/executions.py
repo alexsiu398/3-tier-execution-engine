@@ -112,7 +112,15 @@ async def _run_execution_bg(
 
         svc = ThreeTierService(db, timeout_seconds=timeout_seconds)
         _STEP_FIELDS = {"action", "instruction", "selector", "value"}
-        steps = [Step(**{k: v for k, v in s.items() if k in _STEP_FIELDS}) for s in steps_data]
+        steps = []
+        for s in steps_data:
+            filtered = {k: v for k, v in s.items() if k in _STEP_FIELDS}
+            # Handle legacy DB rows saved before the schema fix: xpath was stored
+            # as a separate key and selector was null. Fall back to xpath so Tier 1
+            # can still use the explicit locator without AI escalation.
+            if not filtered.get("selector") and s.get("xpath"):
+                filtered["selector"] = s["xpath"]
+            steps.append(Step(**filtered))
 
         try:
             async with async_playwright() as pw:

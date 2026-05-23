@@ -565,17 +565,44 @@ async def test_step_with_xpath_does_not_crash_execution_bg(client):
         tc_db = await db.get(TC, tc_id)
         steps_data = list(tc_db.steps)
 
+    from app.api.executions import _normalize_step_data
     from app.services.models import Step
-    # This is the exact construction in _run_execution_bg — must not raise
-    _STEP_FIELDS = {"action", "instruction", "selector", "value"}
-    steps = []
-    for s in steps_data:
-        filtered = {k: v for k, v in s.items() if k in _STEP_FIELDS}
-        if not filtered.get("selector") and s.get("xpath"):
-            filtered["selector"] = s["xpath"]
-        steps.append(Step(**filtered))
+
+    # This is the exact construction in _run_execution_bg — must not raise.
+    steps = [Step(**_normalize_step_data(s)) for s in steps_data]
     # Legacy record had selector=None but xpath set — selector must be populated
     assert steps[0].selector == "//button[@id='submit']"
+
+
+def test_normalize_step_data_recovers_xpath_marker_format():
+    from app.api.executions import _normalize_step_data
+
+    normalized = _normalize_step_data(
+        {
+            "action": "fill",
+            "instruction": 'input username with "standard_user"',
+            "selector": "XPath",
+            "value": "//input[@id='user-name']",
+        }
+    )
+
+    assert normalized["selector"] == "//input[@id='user-name']"
+    assert normalized["value"] == "standard_user"
+
+
+def test_normalize_step_data_recovers_xpath_marker_for_click():
+    from app.api.executions import _normalize_step_data
+
+    normalized = _normalize_step_data(
+        {
+            "action": "click",
+            "instruction": "login",
+            "selector": "XPath",
+            "value": "//input[@id='login-button']",
+        }
+    )
+
+    assert normalized["selector"] == "//input[@id='login-button']"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

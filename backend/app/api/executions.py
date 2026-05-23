@@ -9,6 +9,7 @@ Endpoints:
 
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -36,6 +37,42 @@ router = APIRouter(prefix="/executions", tags=["executions"])
 
 # In-memory store for live execution queues (keyed by execution_id)
 _execution_queues: dict[int, asyncio.Queue] = {}
+_STEP_FIELDS = {"action", "instruction", "selector", "value"}
+_QUOTED_VALUE_RE = re.compile(r'"([^"]+)"|\'([^\']+)\'')
+
+
+def _extract_quoted_value(instruction: str) -> Optional[str]:
+    match = _QUOTED_VALUE_RE.search(instruction)
+    if not match:
+        return None
+    return match.group(1) or match.group(2)
+
+
+def _looks_like_xpath(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    candidate = value.strip()
+    return candidate.startswith("//") or candidate.startswith("(") or candidate.startswith("xpath=")
+
+
+def _normalize_step_data(raw_step: dict) -> dict:
+    filtered = {k: v for k, v in raw_step.items() if k in _STEP_FIELDS}
+
+    # Legacy rows stored xpath under a dedicated key instead of selector.
+    if not filtered.get("selector") and raw_step.get("xpath"):
+        filtered["selector"] = raw_step["xpath"]
+
+    # Some manually-entered rows used selector="XPath" and put the real xpath in value.
+    selector = filtered.get("selector")
+    value = filtered.get("value")
+    if isinstance(selector, str) and selector.strip().lower() == "xpath" and _looks_like_xpath(value):
+        filtered["selector"] = value.strip().removeprefix("xpath=")
+        if filtered.get("action") == "fill":
+            extracted = _extract_quoted_value(filtered.get("instruction", ""))
+            if extracted is not None:
+                filtered["value"] = extracted
+
+    return filtered
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -111,16 +148,7 @@ async def _run_execution_bg(
         await db.commit()
 
         svc = ThreeTierService(db, timeout_seconds=timeout_seconds)
-        _STEP_FIELDS = {"action", "instruction", "selector", "value"}
-        steps = []
-        for s in steps_data:
-            filtered = {k: v for k, v in s.items() if k in _STEP_FIELDS}
-            # Handle legacy DB rows saved before the schema fix: xpath was stored
-            # as a separate key and selector was null. Fall back to xpath so Tier 1
-            # can still use the explicit locator without AI escalation.
-            if not filtered.get("selector") and s.get("xpath"):
-                filtered["selector"] = s["xpath"]
-            steps.append(Step(**filtered))
+        steps = [Step(**_normalize_step_data(s)) for s in steps_data]
 
         try:
             async with async_playwright() as pw:

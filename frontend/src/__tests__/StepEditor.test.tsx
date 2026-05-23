@@ -102,7 +102,7 @@ describe('StepEditor', () => {
     const onChange = vi.fn()
     const { StepEditor } = await import('../components/StepEditor')
     render(<StepEditor steps={[{ action: 'fill', instruction: 'Enter email' }]} onChange={onChange} />)
-    fireEvent.change(screen.getByPlaceholderText(/value/i), {
+    fireEvent.change(screen.getByPlaceholderText(/text to type/i), {
       target: { value: 'test@example.com' },
     })
     const [updatedSteps] = onChange.mock.calls[onChange.mock.calls.length - 1]

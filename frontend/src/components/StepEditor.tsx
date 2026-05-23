@@ -3,6 +3,23 @@ import type { TestStep, StepAction } from '../types'
 
 const ACTIONS: StepAction[] = ['navigate', 'click', 'fill', 'press', 'assert_text', 'assert_url']
 
+function getValuePlaceholder(action: StepAction): string {
+  switch (action) {
+    case 'fill':
+      return 'Text to type, e.g. standard_user'
+    case 'press':
+      return 'Key to press, e.g. Enter'
+    case 'assert_text':
+      return 'Expected text'
+    case 'assert_url':
+      return 'Expected URL fragment'
+    case 'navigate':
+      return 'Optional URL override'
+    default:
+      return 'Usually empty for click'
+  }
+}
+
 interface StepEditorProps {
   steps: TestStep[]
   onChange: (steps: TestStep[]) => void
@@ -34,6 +51,10 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
 
   return (
     <div className="step-editor">
+      <p className="step-editor__hint">
+        Put the full XPath or CSS selector in Selector. Do not type only <strong>XPath</strong>. For{' '}
+        <strong>fill</strong>, Value is the text to enter.
+      </p>
       <table className="step-editor__table">
         <tbody>
           {localSteps.map((step, i) => (
@@ -57,14 +78,14 @@ export function StepEditor({ steps, onChange }: StepEditorProps) {
               </td>
               <td>
                 <input
-                  placeholder="XPath / CSS Selector"
+                  placeholder="Full XPath / CSS selector"
                   value={step.selector ?? ''}
                   onChange={(e) => handleFieldChange(i, 'selector', e.target.value)}
                 />
               </td>
               <td>
                 <input
-                  placeholder="Value"
+                  placeholder={getValuePlaceholder(step.action)}
                   value={step.value ?? ''}
                   onChange={(e) => handleFieldChange(i, 'value', e.target.value)}
                 />

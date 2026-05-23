@@ -1,34 +1,26 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
+import { TestsPage } from './pages/TestsPage'
+import { RunPage } from './pages/RunPage'
+import { HistoryPage } from './pages/HistoryPage'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    <BrowserRouter>
+      <nav className="app-nav">
+        <span className="app-nav__brand">3-Tier Execution Engine</span>
+        <NavLink to="/" end>Tests</NavLink>
+        <NavLink to="/run">Run</NavLink>
+        <NavLink to="/history">History</NavLink>
+      </nav>
+      <main className="app-main">
+        <Routes>
+          <Route path="/" element={<TestsPage />} />
+          <Route path="/run" element={<RunPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </main>
+    </BrowserRouter>
   )
 }
 

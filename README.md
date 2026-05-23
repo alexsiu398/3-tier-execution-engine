@@ -143,6 +143,11 @@ Users can choose their trade-off via the settings UI:
 
 ## Screenshots & Demo
 
+### Test Cases — Manage & Run Tests
+![Test Cases page showing the sauce demo test case with Run, Edit, and Delete actions](tests.png)
+
+### Run Execution — Fallback Strategy Picker
+![Run Execution page showing Option A (Low cost), Option B (High cost), and Option C (Balanced) fallback strategies](run.png)
 
 ### Demo Video
 ![Demo video](demo.gif)

@@ -58,7 +58,7 @@ async def test_tier1_navigate_success():
     assert result.success is True
     assert result.tier == 1
     assert result.duration_ms >= 0
-    page.goto.assert_called_once_with("https://example.com")
+    page.goto.assert_called_once_with("https://example.com", timeout=10000)
 
 
 @pytest.mark.asyncio
@@ -73,7 +73,7 @@ async def test_tier1_navigate_uses_instruction_when_no_value():
     result = await executor.execute_step(page, step)
 
     assert result.success is True
-    page.goto.assert_called_once_with("https://playwright.dev")
+    page.goto.assert_called_once_with("https://playwright.dev", timeout=10000)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ async def test_tier1_fill_success():
     result = await executor.execute_step(page, step)
 
     assert result.success is True
-    page.locator.return_value.fill.assert_called_once_with("test@example.com")
+    page.locator.return_value.fill.assert_called_once_with("test@example.com", timeout=10000)
 
 
 @pytest.mark.asyncio
@@ -166,7 +166,7 @@ async def test_tier1_press_success():
     result = await executor.execute_step(page, step)
 
     assert result.success is True
-    page.locator.return_value.press.assert_called_once_with("Enter")
+    page.locator.return_value.press.assert_called_once_with("Enter", timeout=10000)
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,7 @@ async def test_tier1_press_defaults_to_enter():
     result = await executor.execute_step(page, step)
 
     assert result.success is True
-    page.locator.return_value.press.assert_called_once_with("Enter")
+    page.locator.return_value.press.assert_called_once_with("Enter", timeout=10000)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -278,11 +278,9 @@ async def test_tier1_timeout_returns_failure():
     from app.services.tier1_playwright import Tier1PlaywrightExecutor
 
     page = _make_page()
-
-    async def slow_goto(*args, **kwargs):
-        await asyncio.sleep(10)
-
-    page.goto = slow_goto
+    # Simulate Playwright raising its native TimeoutError (not asyncio.wait_for).
+    # After the fix, Playwright's own timeout fires through the normal exception path.
+    page.goto = AsyncMock(side_effect=asyncio.TimeoutError("Timeout 10ms exceeded."))
     executor = Tier1PlaywrightExecutor(timeout_seconds=0.01)
     step = Step(action="navigate", instruction="go somewhere", value="https://slow.example.com")
 
@@ -291,6 +289,24 @@ async def test_tier1_timeout_returns_failure():
     assert result.success is False
     assert result.tier == 1
     assert result.error is not None
+
+
+@pytest.mark.asyncio
+async def test_tier1_no_asyncio_wait_for_used():
+    """Tier1 must NOT wrap Playwright calls in asyncio.wait_for.
+
+    asyncio.wait_for creates an internal Task; when cancelled it leaves Playwright's
+    internal Futures unresolved, producing TargetClosedError 'Future exception was
+    never retrieved' when the browser closes.
+    Playwright's own per-call timeout= parameter is the correct mechanism.
+    """
+    import inspect
+    from app.services import tier1_playwright
+
+    source = inspect.getsource(tier1_playwright)
+    assert "asyncio.wait_for" not in source, (
+        "tier1_playwright must not use asyncio.wait_for — use Playwright native timeout= instead"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

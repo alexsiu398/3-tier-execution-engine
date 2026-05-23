@@ -10,7 +10,6 @@ Cache-first strategy:
 Returns TierResult(tier=2, xpath_cached=True/False).
 """
 
-import asyncio
 import time
 from typing import Optional
 
@@ -29,6 +28,8 @@ class Tier2HybridExecutor:
         self.xpath_cache = xpath_cache
         self.stagehand = stagehand
         self.timeout_seconds = timeout_seconds
+        # Playwright accepts timeout in milliseconds
+        self.timeout_ms = int(timeout_seconds * 1000)
 
     async def execute_step(self, page, step: Step) -> TierResult:
         start = time.monotonic()
@@ -38,10 +39,7 @@ class Tier2HybridExecutor:
             cached_xpath = await self.xpath_cache.get(step.instruction, page_url)
 
             if cached_xpath:
-                await asyncio.wait_for(
-                    self._execute_with_xpath(page, step, cached_xpath),
-                    timeout=self.timeout_seconds,
-                )
+                await self._execute_with_xpath(page, step, cached_xpath)
                 return TierResult(
                     tier=2,
                     success=True,
@@ -54,10 +52,7 @@ class Tier2HybridExecutor:
             if not xpath:
                 raise ValueError("stagehand.observe() returned no XPath for this instruction")
 
-            await asyncio.wait_for(
-                self._execute_with_xpath(page, step, xpath),
-                timeout=self.timeout_seconds,
-            )
+            await self._execute_with_xpath(page, step, xpath)
             await self.xpath_cache.store(step.instruction, page_url, xpath)
 
             return TierResult(
@@ -81,17 +76,18 @@ class Tier2HybridExecutor:
 
     async def _execute_with_xpath(self, page, step: Step, xpath: str) -> None:
         """Dispatch the step's action using the resolved *xpath*."""
+        t = self.timeout_ms
         locator = page.locator(f"xpath={xpath}")
         action = step.action
 
         if action == "click":
-            await locator.click()
+            await locator.click(timeout=t)
         elif action == "fill":
-            await locator.fill(step.value or "")
+            await locator.fill(step.value or "", timeout=t)
         elif action == "press":
-            await locator.press(step.value or "Enter")
+            await locator.press(step.value or "Enter", timeout=t)
         elif action == "assert_text":
-            text = await locator.inner_text()
+            text = await locator.inner_text(timeout=t)
             if step.value and step.value not in text:
                 raise AssertionError(f"Expected '{step.value}' not found in '{text}'")
         else:

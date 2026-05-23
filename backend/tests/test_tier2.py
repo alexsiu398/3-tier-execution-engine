@@ -218,7 +218,7 @@ async def test_tier2_fill_via_cached_xpath():
     result = await executor.execute_step(page, step)
 
     assert result.success is True
-    page.locator.return_value.fill.assert_called_once_with("user@example.com")
+    page.locator.return_value.fill.assert_called_once_with("user@example.com", timeout=10000)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -260,3 +260,19 @@ async def test_tier2_assert_text_mismatch_via_cached_xpath():
     result = await executor.execute_step(page, step)
 
     assert result.success is False
+
+
+def test_tier2_no_asyncio_wait_for_used():
+    """Tier2 must NOT wrap Playwright calls in asyncio.wait_for.
+
+    asyncio.wait_for leaves Playwright's internal Futures alive after cancellation.
+    When the browser closes, those Futures resolve with TargetClosedError and Python
+    logs 'Future exception was never retrieved'.  Use Playwright native timeout= instead.
+    """
+    import inspect
+    from app.services import tier2_hybrid
+
+    source = inspect.getsource(tier2_hybrid)
+    assert "asyncio.wait_for" not in source, (
+        "tier2_hybrid must not use asyncio.wait_for — use Playwright native timeout= instead"
+    )

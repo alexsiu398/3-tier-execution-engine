@@ -5,7 +5,81 @@
 
 ---
 
-## Problem Statement
+## Getting Started
+
+### Prerequisites
+
+| Tool | Version |
+|------|---------|
+| Python | 3.12+ |
+| Node.js | 20+ |
+| Docker & Compose | (optional — for one-command setup) |
+
+### Option 1 — Local Dev (make dev)
+
+```bash
+# 1. Clone and install all dependencies
+git clone <repo-url>
+cd 3-tier-execution-engine
+make setup
+
+# 2. Configure environment (defaults work without an API key)
+cp backend/.env.example backend/.env
+# Edit backend/.env to add OPENROUTER_API_KEY if you want real Tier 3 LLM calls
+
+# 3. Apply database migrations
+make migrate
+
+# 4. Seed demo test cases and start both servers
+make demo
+#   Backend API docs → http://localhost:8000/docs
+#   Frontend app    → http://localhost:5173
+```
+
+Alternatively, start just the servers (no seed data):
+
+```bash
+make dev
+```
+
+### Option 2 — Docker Compose (one command)
+
+```bash
+docker compose up --build
+#   Frontend → http://localhost:5173
+#   API docs → http://localhost:8000/docs
+```
+
+To also seed the demo test cases:
+
+```bash
+make docker-demo
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `sqlite+aiosqlite:///./engine.db` | SQLite connection string |
+| `STAGEHAND_MOCK` | `true` | Use mock Tier 2/3 — no API key required |
+| `STAGEHAND_ENABLED` | `false` | Enable real Stagehand browser AI |
+| `OPENROUTER_API_KEY` | _(empty)_ | API key for Tier 3 LLM calls |
+| `CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed frontend origins |
+
+> **Demo mode:** `STAGEHAND_MOCK=true` (the default) makes Tier 2 and Tier 3 return  
+> plausible mock results so the full tier cascade is visible without any paid API key.
+
+### Running Tests
+
+```bash
+make test           # pytest (backend) + vitest (frontend)
+make test-backend   # backend only, with coverage report
+make test-frontend  # frontend only
+```
+
+---
+
+
 
 Web UI tests fail frequently when HTML structure changes — a hardcoded CSS selector breaks, the test suite fails, and engineers spend hours manually patching selectors. In large test suites this becomes a significant maintenance burden.
 
@@ -223,7 +297,94 @@ export function ExecutionSettingsPanel() {
 
 ---
 
+## How It Works — Tier Cascade Walkthrough
+
+When a test step is executed the orchestrator in `three_tier_service.py` attempts each tier in order, stopping as soon as one succeeds.
+
+### Step 1 — Tier 1: Direct Playwright (always first)
+
+```python
+# three_tier_service.py
+result = await self.tier1.execute_step(page, step)
+if result.success:
+    return result  # ✅ ~85 % of steps end here — zero LLM cost
+```
+
+Tier 1 uses the step's `selector` field to call Playwright directly:
+
+```python
+# tier1_playwright.py
+await page.locator(step.selector).click(timeout=self.timeout_ms)
+```
+
+If there is no selector, or the element is not found, Tier 1 raises and the orchestrator falls through to the configured fallback.
+
+### Step 2 — Tier 2: Hybrid XPath + Cache (Option A or C)
+
+```python
+# tier2_hybrid.py  (cache-first path)
+cached_xpath = await self.cache.get(instruction=step.instruction, page_url=page.url)
+if cached_xpath:
+    await page.locator(f"xpath={cached_xpath}").click()   # T2-cached badge
+    return TierResult(tier=2, success=True, xpath_cached=True, ...)
+
+# Cache miss — ask Stagehand to observe the live DOM
+xpath = await self.stagehand.observe(step.instruction)
+await self.cache.store(step.instruction, page.url, xpath)  # warm the cache
+await page.locator(f"xpath={xpath}").click()              # T2 badge
+```
+
+Cache key = `SHA-256(normalised_instruction + url_pattern)`.  
+On the **second run** of the same test the cache is warm and Tier 2 runs at near-Tier-1 speed with no LLM call.
+
+### Step 3 — Tier 3: Full Stagehand AI (Option B or C)
+
+```python
+# tier3_stagehand.py
+success = await self.stagehand.act(step.instruction)  # full LLM reasoning
+return TierResult(tier=3, success=success, ...)
+```
+
+`act()` gives Stagehand the natural-language instruction and lets it reason about the page DOM. This handles dynamic/obscured elements that neither Playwright selectors nor XPath observation can reach.
+
+### Configurable fallback strategies
+
+```python
+# three_tier_service.py — strategy routing
+if strategy in ("option_a", "option_c"):
+    result = await self.tier2.execute_step(page, step)
+    if result.success:
+        return result
+
+if strategy in ("option_b", "option_c"):
+    result = await self.tier3.execute_step(page, step)
+    if result.success:
+        return result
+
+return TierResult(success=False, error="All tiers exhausted")
+```
+
+| Strategy | Tier sequence | Best for |
+|----------|--------------|----------|
+| **Option A** | T1 → T2 | Cost-sensitive — avoids Tier 3 entirely |
+| **Option B** | T1 → T3 | Complex dynamic UIs where XPath is fragile |
+| **Option C** ⭐ | T1 → T2 → T3 | Maximum reliability (default) |
+
+### Real-time progress via Server-Sent Events
+
+After `POST /api/v1/executions`, the browser connects to `GET /api/v1/executions/{id}/stream`.  
+The backend emits one SSE event per completed step:
+
+```
+data: {"step_index": 2, "tier": 1, "success": true, "duration_ms": 43, "xpath_cached": false}
+```
+
+The React `useSSE` hook in `api.ts` consumes the stream and updates the `ExecutionProgress` component in real time — each step card transitions from a spinner to a coloured tier badge (`T1` green / `T2` amber / `T3` red).
+
+---
+
 ## Design Decisions & Trade-offs
+
 
 **Why 3 tiers instead of going straight to AI?**  
 LLM inference adds 1–5 seconds latency per step and costs money at scale. 85% of steps have stable selectors — Tier 1 handles those instantly at zero cost. AI is reserved for the cases that genuinely need it.

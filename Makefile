@@ -1,4 +1,5 @@
-.PHONY: help setup backend frontend dev test test-backend test-frontend migrate seed
+.PHONY: help setup backend frontend dev test test-backend test-frontend migrate seed \
+        docker-build docker-up docker-down docker-demo
 
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
@@ -57,3 +58,24 @@ demo: migrate  ## Seed DB with demo data and open browser
 	@echo "Backend: http://localhost:8000/docs"
 	@echo "Frontend: http://localhost:5173"
 	@$(MAKE) -j2 backend frontend
+
+# ── Docker ─────────────────────────────────────────────────────────────────
+
+docker-build:  ## Build both Docker images
+	docker compose build
+
+docker-up:  ## Start the full stack via Docker Compose (detached)
+	docker compose up -d
+	@echo "Frontend: http://localhost:5173"
+	@echo "API docs: http://localhost:8000/docs"
+
+docker-down:  ## Stop and remove Docker Compose containers
+	docker compose down
+
+docker-demo:  ## Docker build + seed demo data + open app
+	docker compose up --build -d
+	@echo "Waiting for backend to be healthy..."
+	@docker compose exec backend sh -c "alembic upgrade head && python seed_demo.py"
+	@echo ""
+	@echo "Frontend: http://localhost:5173"
+	@echo "API docs: http://localhost:8000/docs"

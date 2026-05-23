@@ -1,0 +1,49 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist the SQLite database file between container restarts / rebuilds.
+      - db_data:/app/db
+    environment:
+      # Store DB inside the named volume so data survives rebuilds.
+      DATABASE_URL: "sqlite+aiosqlite:////app/db/engine.db"
+      # Allow the browser (served from localhost:5173) to call the API.
+      CORS_ORIGINS: '["http://localhost:5173"]'
+      # Run in mock mode by default — no LLM API key required for the demo.
+      STAGEHAND_ENABLED: "false"
+      STAGEHAND_MOCK: "true"
+    healthcheck:
+      # Use Python's built-in urllib so we don't need curl in the image.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      # Map container port 80 (nginx) to host port 5173 so local dev URLs
+      # (http://localhost:5173) work the same whether running via make dev or
+      # docker compose up.
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  # Named volume for the SQLite file — survives `docker compose down` but is
+  # cleaned up by `docker compose down --volumes`.
+  db_data:

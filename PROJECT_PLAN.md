@@ -98,7 +98,7 @@ discussions.
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── ExecutionSettings.tsx    # Option A/B/C picker
-│   │   │   ├── StepEditor.tsx           # Add / reorder test steps
+│   │   │   ├── StepEditor.tsx           # Plain-text step editor (one step per line; action: prefix optional)
 │   │   │   ├── ExecutionProgress.tsx    # Live SSE progress view
 │   │   │   ├── TierBadge.tsx            # Coloured badge: T1/T2/T3
 │   │   │   └── TierAnalyticsChart.tsx  # Bar chart tier distribution
@@ -274,8 +274,9 @@ discussions.
     - Risk: Low
 
 17. **Tests page** (File: `frontend/src/pages/TestsPage.tsx`)
-    - Action: List test cases; "New Test" button opens modal with `StepEditor.tsx` (add/remove/reorder steps inline); URL field; strategy picker dropdown
-    - Key component `StepEditor`: table of steps, each row has action dropdown + instruction textarea + optional selector field
+    - Action: List test cases; "New Test" button and per-card "Edit" button both open the same shared modal form; title + URL fields; plain-text `StepEditor`; "Create" / "Save" button submits to the appropriate API call
+    - Key component `StepEditor`: single `<textarea>` — one step per line in plain text. Action can be optionally prefixed (`navigate: …`, `fill: …`); bare lines default to `click`. Parses to/from `TestStep[]` automatically.
+    - Edit flow: clicking "Edit" on a card pre-populates the modal and calls `PUT /api/v1/tests/{id}` on save; modal heading changes to "Edit Test Case"
     - Dependencies: Steps 13, 16
     - Risk: Low
 

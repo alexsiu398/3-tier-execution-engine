@@ -1,14 +1,16 @@
 /**
- * StepEditor component tests
- * RED: drives the StepEditor component implementation.
+ * StepEditor component tests — plain-text editor
  *
  * Tests:
- * - renders empty state with Add Step button
- * - clicking Add Step adds a row
- * - can update action dropdown
- * - can update instruction textarea
- * - clicking × removes a step
- * - shows step numbers
+ * - renders a single textarea for all steps
+ * - serializes click steps as bare instruction lines
+ * - serializes non-click steps as "action: instruction"
+ * - onChange called when textarea content changes
+ * - parses bare lines as click action
+ * - parses "action: instruction" prefixed lines
+ * - parses lines with space-separated action prefix
+ * - filters empty lines from parsed output
+ * - renders placeholder text
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -17,100 +19,87 @@ import type { TestStep } from '../types'
 
 const sampleSteps: TestStep[] = [
   { action: 'navigate', instruction: 'Go to homepage' },
-  { action: 'click', instruction: 'Click login button', selector: '#login' },
+  { action: 'click', instruction: 'Click login button' },
 ]
 
 describe('StepEditor', () => {
-  it('renders "Add Step" button', async () => {
+  it('renders a single textarea', async () => {
     const { StepEditor } = await import('../components/StepEditor')
     render(<StepEditor steps={[]} onChange={vi.fn()} />)
-    expect(screen.getByText(/add step/i)).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
   })
 
-  it('renders one row per step', async () => {
+  it('serializes click steps as bare instruction lines', async () => {
+    const { StepEditor } = await import('../components/StepEditor')
+    const steps: TestStep[] = [{ action: 'click', instruction: 'Click login' }]
+    render(<StepEditor steps={steps} onChange={vi.fn()} />)
+    expect(screen.getByRole('textbox')).toHaveValue('Click login')
+  })
+
+  it('serializes non-click steps with action prefix', async () => {
     const { StepEditor } = await import('../components/StepEditor')
     render(<StepEditor steps={sampleSteps} onChange={vi.fn()} />)
-
-    // Each row shows instruction
-    expect(screen.getByDisplayValue('Go to homepage')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Click login button')).toBeInTheDocument()
+    const text = (screen.getByRole('textbox') as HTMLTextAreaElement).value
+    expect(text).toContain('navigate: Go to homepage')
+    expect(text).toContain('Click login button')
   })
 
-  it('clicking Add Step calls onChange with one more step', async () => {
+  it('onChange called when textarea changes', async () => {
     const onChange = vi.fn()
     const { StepEditor } = await import('../components/StepEditor')
     render(<StepEditor steps={[]} onChange={onChange} />)
-
-    fireEvent.click(screen.getByText(/add step/i))
-
-    expect(onChange).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ instruction: '' })])
-    )
-    const [newSteps] = onChange.mock.calls[0]
-    expect(newSteps).toHaveLength(1)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Do something' } })
+    expect(onChange).toHaveBeenCalledTimes(1)
   })
 
-  it('appends new step to existing steps when Add Step is clicked', async () => {
+  it('parses a bare line as a click step', async () => {
     const onChange = vi.fn()
     const { StepEditor } = await import('../components/StepEditor')
-    render(<StepEditor steps={sampleSteps} onChange={onChange} />)
-
-    fireEvent.click(screen.getByText(/add step/i))
-
-    const [newSteps] = onChange.mock.calls[0]
-    expect(newSteps).toHaveLength(3)
+    render(<StepEditor steps={[]} onChange={onChange} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Click the button' } })
+    const [steps] = onChange.mock.calls[0]
+    expect(steps).toHaveLength(1)
+    expect(steps[0]).toMatchObject({ action: 'click', instruction: 'Click the button' })
   })
 
-  it('clicking remove (×) button calls onChange without that step', async () => {
+  it('parses "action: instruction" prefixed lines', async () => {
     const onChange = vi.fn()
     const { StepEditor } = await import('../components/StepEditor')
-    render(<StepEditor steps={sampleSteps} onChange={onChange} />)
-
-    const removeButtons = screen.getAllByRole('button', { name: /remove step/i })
-    fireEvent.click(removeButtons[0])
-
-    const [newSteps] = onChange.mock.calls[0]
-    expect(newSteps).toHaveLength(1)
-    expect(newSteps[0].instruction).toBe('Click login button')
+    render(<StepEditor steps={[]} onChange={onChange} />)
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'navigate: https://example.com\nfill: username field with admin' },
+    })
+    const [steps] = onChange.mock.calls[0]
+    expect(steps).toHaveLength(2)
+    expect(steps[0]).toMatchObject({ action: 'navigate', instruction: 'https://example.com' })
+    expect(steps[1]).toMatchObject({ action: 'fill', instruction: 'username field with admin' })
   })
 
-  it('updating instruction textarea calls onChange with updated step', async () => {
+  it('parses space-separated action prefix without colon', async () => {
     const onChange = vi.fn()
     const { StepEditor } = await import('../components/StepEditor')
-    render(<StepEditor steps={sampleSteps} onChange={onChange} />)
-
-    const textarea = screen.getByDisplayValue('Go to homepage')
-    fireEvent.change(textarea, { target: { value: 'Navigate to /about' } })
-
-    const [newSteps] = onChange.mock.calls[0]
-    expect(newSteps[0].instruction).toBe('Navigate to /about')
+    render(<StepEditor steps={[]} onChange={onChange} />)
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'navigate https://example.com' },
+    })
+    const [steps] = onChange.mock.calls[0]
+    expect(steps[0]).toMatchObject({ action: 'navigate', instruction: 'https://example.com' })
   })
 
-  it('updating action dropdown calls onChange with updated action', async () => {
+  it('filters empty lines', async () => {
     const onChange = vi.fn()
     const { StepEditor } = await import('../components/StepEditor')
-    render(<StepEditor steps={[{ action: 'navigate', instruction: 'test' }]} onChange={onChange} />)
-
-    const selects = screen.getAllByRole('combobox')
-    fireEvent.change(selects[0], { target: { value: 'click' } })
-
-    const [newSteps] = onChange.mock.calls[0]
-    expect(newSteps[0].action).toBe('click')
+    render(<StepEditor steps={[]} onChange={onChange} />)
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Step one\n\n  \nStep two' },
+    })
+    const [steps] = onChange.mock.calls[0]
+    expect(steps).toHaveLength(2)
   })
 
-  it('renders selector input for each step', async () => {
+  it('shows helpful placeholder text', async () => {
     const { StepEditor } = await import('../components/StepEditor')
-    render(<StepEditor steps={sampleSteps} onChange={vi.fn()} />)
-
-    // The second step has selector #login
-    expect(screen.getByDisplayValue('#login')).toBeInTheDocument()
-  })
-
-  it('renders step numbers starting from 1', async () => {
-    const { StepEditor } = await import('../components/StepEditor')
-    render(<StepEditor steps={sampleSteps} onChange={vi.fn()} />)
-
-    expect(screen.getByText('1')).toBeInTheDocument()
-    expect(screen.getByText('2')).toBeInTheDocument()
+    render(<StepEditor steps={[]} onChange={vi.fn()} />)
+    expect(screen.getByPlaceholderText(/navigate/i)).toBeInTheDocument()
   })
 })

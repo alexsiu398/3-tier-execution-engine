@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { TestCase, TestCaseCreate } from '../types'
-import { getTestCases, createTestCase, deleteTestCase } from '../services/api'
+import { getTestCases, createTestCase, updateTestCase, deleteTestCase } from '../services/api'
 import { StepEditor } from '../components/StepEditor'
+
+type ModalMode = 'create' | 'edit'
+
+const emptyForm = (): TestCaseCreate => ({ title: '', url: '', steps: [] })
 
 export function TestsPage() {
   const [tests, setTests] = useState<TestCase[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState<TestCaseCreate>({ title: '', url: '', steps: [] })
+  const [modal, setModal] = useState<{ mode: ModalMode; id?: number } | null>(null)
+  const [form, setForm] = useState<TestCaseCreate>(emptyForm())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const navigate = useNavigate()
@@ -18,13 +22,29 @@ export function TestsPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  const handleCreate = async () => {
+  const openCreate = () => {
+    setForm(emptyForm())
+    setModal({ mode: 'create' })
+  }
+
+  const openEdit = (tc: TestCase) => {
+    setForm({ title: tc.title, url: tc.url, steps: tc.steps })
+    setModal({ mode: 'edit', id: tc.id })
+  }
+
+  const closeModal = () => setModal(null)
+
+  const handleSave = async () => {
     setSaving(true)
     try {
-      const created = await createTestCase(form)
-      setTests((prev) => [...prev, created])
-      setShowForm(false)
-      setForm({ title: '', url: '', steps: [] })
+      if (modal?.mode === 'edit' && modal.id !== undefined) {
+        const updated = await updateTestCase(modal.id, form)
+        setTests((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+      } else {
+        const created = await createTestCase(form)
+        setTests((prev) => [...prev, created])
+      }
+      closeModal()
     } finally {
       setSaving(false)
     }
@@ -35,18 +55,20 @@ export function TestsPage() {
     setTests((prev) => prev.filter((t) => t.id !== id))
   }
 
+  const isEdit = modal?.mode === 'edit'
+
   return (
     <div className="page">
       <div className="page-header">
         <h2>Test Cases</h2>
-        <button type="button" onClick={() => setShowForm(true)} className="btn-primary">
+        <button type="button" onClick={openCreate} className="btn-primary">
           + New Test
         </button>
       </div>
 
       {loading && <p>Loading…</p>}
 
-      {!loading && tests.length === 0 && !showForm && (
+      {!loading && tests.length === 0 && !modal && (
         <p className="empty-state">No test cases yet. Create one to get started.</p>
       )}
 
@@ -62,6 +84,13 @@ export function TestsPage() {
               <button type="button" onClick={() => navigate(`/run?test=${tc.id}`)}>Run</button>
               <button
                 type="button"
+                onClick={() => openEdit(tc)}
+                aria-label={`Edit ${tc.title}`}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
                 onClick={() => handleDelete(tc.id)}
                 className="btn-danger"
                 aria-label={`Delete ${tc.title}`}
@@ -73,22 +102,22 @@ export function TestsPage() {
         ))}
       </div>
 
-      {showForm && (
+      {modal && (
         <div className="modal-overlay" role="dialog" aria-modal="true">
           <div className="modal">
-            <h3>New Test Case</h3>
-            <label htmlFor="new-test-title">
+            <h3>{isEdit ? 'Edit Test Case' : 'New Test Case'}</h3>
+            <label htmlFor="test-title">
               Title
               <input
-                id="new-test-title"
+                id="test-title"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
               />
             </label>
-            <label htmlFor="new-test-url">
+            <label htmlFor="test-url">
               URL
               <input
-                id="new-test-url"
+                id="test-url"
                 value={form.url}
                 onChange={(e) => setForm({ ...form, url: e.target.value })}
               />
@@ -98,14 +127,14 @@ export function TestsPage() {
               onChange={(steps) => setForm({ ...form, steps })}
             />
             <div className="modal__actions">
-              <button type="button" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="button" onClick={closeModal}>Cancel</button>
               <button
                 type="button"
-                onClick={handleCreate}
+                onClick={handleSave}
                 disabled={saving || !form.title || !form.url}
                 className="btn-primary"
               >
-                {saving ? 'Saving…' : 'Create'}
+                {saving ? 'Saving…' : isEdit ? 'Save' : 'Create'}
               </button>
             </div>
           </div>

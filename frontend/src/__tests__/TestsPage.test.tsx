@@ -1,6 +1,5 @@
 /**
  * TestsPage component tests
- * RED: drives the TestsPage page implementation.
  *
  * Tests:
  * - fetches and renders test case list
@@ -9,6 +8,9 @@
  * - form has title/URL inputs and StepEditor
  * - create button posts to API and closes modal
  * - delete button removes test from list
+ * - Edit button opens modal pre-populated with test data
+ * - Edit modal save calls updateTestCase
+ * - Edit modal cancel closes without saving
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -24,7 +26,7 @@ vi.mock('../services/api', () => ({
   getTestCase: vi.fn(),
 }))
 
-// StepEditor is rendered inside the modal — mock it for simplicity
+// StepEditor plain-text mock
 vi.mock('../components/StepEditor', () => ({
   StepEditor: ({ steps, onChange }: { steps: unknown[]; onChange: (s: unknown[]) => void }) => (
     <div data-testid="step-editor">
@@ -165,5 +167,101 @@ describe('TestsPage', () => {
     await waitFor(() => {
       expect(screen.getByText(/1\s*step/i)).toBeInTheDocument()
     })
+  })
+
+  it('"Edit" button is shown on each test card', async () => {
+    const { getTestCases } = await import('../services/api')
+    vi.mocked(getTestCases).mockResolvedValue(mockTests)
+
+    const { TestsPage } = await import('../pages/TestsPage')
+    render(<MemoryRouter><TestsPage /></MemoryRouter>)
+
+    await waitFor(() => screen.getByText('Login Flow'))
+    const editButtons = screen.getAllByRole('button', { name: /edit/i })
+    expect(editButtons).toHaveLength(2)
+  })
+
+  it('clicking Edit opens modal pre-populated with test title and URL', async () => {
+    const { getTestCases } = await import('../services/api')
+    vi.mocked(getTestCases).mockResolvedValue(mockTests)
+
+    const { TestsPage } = await import('../pages/TestsPage')
+    render(<MemoryRouter><TestsPage /></MemoryRouter>)
+
+    await waitFor(() => screen.getByText('Login Flow'))
+    const editButtons = screen.getAllByRole('button', { name: /edit/i })
+    fireEvent.click(editButtons[0])
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect((screen.getByLabelText(/title/i) as HTMLInputElement).value).toBe('Login Flow')
+    expect((screen.getByLabelText(/url/i) as HTMLInputElement).value).toBe('https://example.com')
+  })
+
+  it('Edit modal save calls updateTestCase and closes modal', async () => {
+    const { getTestCases, updateTestCase } = await import('../services/api')
+    vi.mocked(getTestCases).mockResolvedValue([...mockTests])
+    const updated = { ...mockTests[0], title: 'Login Flow Updated' }
+    vi.mocked(updateTestCase).mockResolvedValue(updated)
+
+    const { TestsPage } = await import('../pages/TestsPage')
+    render(<MemoryRouter><TestsPage /></MemoryRouter>)
+
+    await waitFor(() => screen.getByText('Login Flow'))
+    const editButtons = screen.getAllByRole('button', { name: /edit/i })
+    fireEvent.click(editButtons[0])
+
+    fireEvent.change(screen.getByLabelText(/title/i), { target: { value: 'Login Flow Updated' } })
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(updateTestCase).toHaveBeenCalledWith(1, expect.objectContaining({ title: 'Login Flow Updated' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  it('Edit modal cancel closes without calling updateTestCase', async () => {
+    const { getTestCases, updateTestCase } = await import('../services/api')
+    vi.mocked(getTestCases).mockResolvedValue(mockTests)
+
+    const { TestsPage } = await import('../pages/TestsPage')
+    render(<MemoryRouter><TestsPage /></MemoryRouter>)
+
+    await waitFor(() => screen.getByText('Login Flow'))
+    const editButtons = screen.getAllByRole('button', { name: /edit/i })
+    fireEvent.click(editButtons[0])
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(updateTestCase).not.toHaveBeenCalled()
+  })
+
+  it('New Test modal heading says "New Test Case"', async () => {
+    const { getTestCases } = await import('../services/api')
+    vi.mocked(getTestCases).mockResolvedValue([])
+
+    const { TestsPage } = await import('../pages/TestsPage')
+    render(<MemoryRouter><TestsPage /></MemoryRouter>)
+
+    await waitFor(() => screen.getByText(/new test/i))
+    fireEvent.click(screen.getByText(/new test/i))
+
+    expect(screen.getByRole('heading', { name: /new test case/i })).toBeInTheDocument()
+  })
+
+  it('Edit modal heading says "Edit Test Case"', async () => {
+    const { getTestCases } = await import('../services/api')
+    vi.mocked(getTestCases).mockResolvedValue(mockTests)
+
+    const { TestsPage } = await import('../pages/TestsPage')
+    render(<MemoryRouter><TestsPage /></MemoryRouter>)
+
+    await waitFor(() => screen.getByText('Login Flow'))
+    const editButtons = screen.getAllByRole('button', { name: /edit/i })
+    fireEvent.click(editButtons[0])
+
+    expect(screen.getByRole('heading', { name: /edit test case/i })).toBeInTheDocument()
   })
 })
